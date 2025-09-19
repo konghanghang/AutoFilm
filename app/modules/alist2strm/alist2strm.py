@@ -2,6 +2,7 @@ from asyncio import to_thread, Semaphore, TaskGroup
 from os import PathLike
 from pathlib import Path
 from re import compile as re_compile
+from time import time
 import traceback
 
 from aiofile import async_open
@@ -91,11 +92,29 @@ class Alist2Strm:
         else:
             self.sync_ignore_pattern = None
 
-    async def run(self) -> None:
+    async def run(self, specific_dir: str = None, sync_mode: bool = None) -> dict:
         """
         处理主体
+
+        :param specific_dir: 可选，指定要处理的子目录路径
+        :param sync_mode: 可选，覆盖默认的同步设置
+        :return: 执行结果字典
         """
         
+        # BDMV 处理相关变量初始化
+        # 统计信息
+        processed_count = 0
+        error_count = 0
+        start_time = time()
+
+        # 使用指定目录或默认配置目录
+        actual_source_dir = specific_dir if specific_dir else self.source_dir
+
+        # 临时覆盖同步设置
+        original_sync = self.sync_server
+        if sync_mode is not None:
+            self.sync_server = sync_mode
+
         # BDMV 处理相关变量初始化
         self.bdmv_collections: dict[str, list[tuple[AlistPath, int]]] = {}  # BDMV目录 -> [(文件路径, 文件大小)]
         self.bdmv_largest_files: dict[str, AlistPath] = {}  # BDMV目录 -> 最大文件路径
@@ -170,13 +189,14 @@ class Alist2Strm:
         # 第一阶段：收集所有文件信息并直接处理普通文件
         async with self.__max_workers, TaskGroup() as tg:
             async for path in self.client.iter_path(
-                dir_path=self.source_dir,
+                dir_path=actual_source_dir,
                 wait_time=self.wait_time,
                 is_detail=is_detail,
                 filter=filter,
             ):
                 # 直接处理普通文件，不需要额外的 list
                 tg.create_task(self.__file_processer(path))
+                processed_count += 1
 
         # 完成 BDMV 文件收集，确定最大文件
         self._finalize_bdmv_collections()
@@ -216,7 +236,22 @@ class Alist2Strm:
         if self.sync_server:
             await self.__cleanup_local_files()
             logger.info("清理过期的 .strm 文件完成")
-        logger.info("Alist2Strm 处理完成")
+
+        # 恢复原始同步设置
+        self.sync_server = original_sync
+
+        # 计算执行时间
+        execution_time = time() - start_time
+
+        logger.info(f"Alist2Strm 处理完成，处理文件数：{processed_count}，错误数：{error_count}，耗时：{execution_time:.2f}秒")
+
+        return {
+            "status": "success",
+            "processed_count": processed_count,
+            "error_count": error_count,
+            "execution_time": execution_time,
+            "source_dir": actual_source_dir
+        }
 
     async def __file_processer(self, path: AlistPath) -> None:
         """

@@ -103,5 +103,29 @@ class SettingManager:
             library_poster_list = safe_load(file).get("LibraryPosterList", [])
         return library_poster_list
 
+    @property
+    def APIConfig(self) -> dict[str, Any]:
+        """
+        API 配置信息
+        """
+        with self.CONFIG.open(mode="r", encoding="utf-8") as file:
+            api_config = safe_load(file).get("API", {})
+
+        # 设置默认值
+        default_config = {
+            "enabled": True,
+            "host": "0.0.0.0",
+            "port": 8080,
+            "api_key": None,
+            "cors_origins": ["*"]
+        }
+
+        # 合并配置
+        for key, value in default_config.items():
+            if key not in api_config:
+                api_config[key] = value
+
+        return api_config
+
 
 settings = SettingManager()

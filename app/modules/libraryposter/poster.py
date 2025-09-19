@@ -386,16 +386,32 @@ class LibraryPoster:
         await self.update_library_image(library, result)
         logger.info(f"媒体库 {library['Name']} 的海报图片处理成功")
 
-    async def run(self) -> None:
+    async def run(self) -> dict:
         """
         执行库海报更新
         """
         libraries = await self.get_libraries()
         library_kv: dict[str, str] = {item["Name"]: item for item in libraries}
+
+        updated_count = 0
+        processed_libraries = []
+
         for config in self.__configs:
             if config["library_name"] in library_kv:
-                await self.process_library(
-                    library_kv[config["library_name"]],
-                    config.get("title", ""),
-                    config.get("subtitle", ""),
-                )
+                try:
+                    await self.process_library(
+                        library_kv[config["library_name"]],
+                        config.get("title", ""),
+                        config.get("subtitle", ""),
+                    )
+                    updated_count += 1
+                    processed_libraries.append(config["library_name"])
+                except Exception as e:
+                    logger.error(f"处理媒体库 {config['library_name']} 时出错: {str(e)}")
+
+        return {
+            "status": "success",
+            "message": f"成功更新 {updated_count} 个媒体库海报",
+            "updated_count": updated_count,
+            "processed_libraries": processed_libraries
+        }

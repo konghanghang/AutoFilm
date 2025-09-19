@@ -76,11 +76,14 @@ class Ani2Alist:
         self.__src_domain = src_domain.strip()
         self.__rss_domain = rss_domain.strip()
 
-    async def run(self) -> None:
+    async def run(self) -> dict:
         is_valid, error_msg = self.__is_valid()
         if not is_valid:
             logger.error(error_msg)
-            return
+            return {
+                "status": "error",
+                "message": error_msg
+            }
 
         storage = await self.client.get_storage_by_mount_path(
             mount_path=self.__target_dir,
@@ -89,17 +92,30 @@ class Ani2Alist:
         )
         if storage is None:
             logger.error(f"未找到挂载路径：{self.__target_dir}，并且无法创建")
-            return
+            return {
+                "status": "error",
+                "message": f"未找到挂载路径：{self.__target_dir}，并且无法创建"
+            }
 
         addition_dict = storage.addition2dict
         url_dict = AlistUtils.structure2dict(addition_dict.get("url_structure", ""))
 
+        original_count = len(url_dict)
         await self.__update_url_dicts(url_dict)
+        new_count = len(url_dict) - original_count
 
         addition_dict["url_structure"] = AlistUtils.dict2structure(url_dict)
         storage.set_addition_by_dict(addition_dict)
 
         await self.client.async_api_admin_storage_update(storage)
+
+        return {
+            "status": "success",
+            "message": f"成功更新 {new_count} 个动漫",
+            "total_count": len(url_dict),
+            "new_count": new_count,
+            "target_dir": self.__target_dir
+        }
 
     async def __update_url_dicts(self, url_dict: dict):
         """
